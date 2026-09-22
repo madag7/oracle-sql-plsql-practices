@@ -58,3 +58,6 @@ liquibase.properties
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Configuración local de Claude Code (por máquina, no compartir)
+.claude/settings.local.json

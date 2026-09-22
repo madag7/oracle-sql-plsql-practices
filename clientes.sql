@@ -1,6 +1,7 @@
 --------------------------------------------------------------------------------
 -- clientes.sql
--- Tabla CLIENTES + procedimiento PL/SQL de alta con validación de correo único.
+-- Tabla CLIENTES + procedimiento PL/SQL de alta con validación de correo único
+-- y gestión completa de excepciones (DUP_VAL_ON_INDEX, constraints y OTHERS).
 -- Probado sobre Oracle Database 11g o superior.
 --------------------------------------------------------------------------------
 
@@ -43,6 +44,18 @@ CREATE SEQUENCE seq_clientes
 
 --------------------------------------------------------------------------------
 -- 3. Procedimiento de alta
+--
+--    Códigos de error devueltos a la aplicación:
+--      -20001  El nombre es obligatorio
+--      -20002  El correo es obligatorio
+--      -20003  Formato de correo inválido
+--      -20004  Correo ya registrado (duplicado)
+--      -20005  Otra violación de unicidad (p. ej. clave primaria)
+--      -20006  Campo obligatorio nulo         (ORA-01400)
+--      -20007  Restricción CHECK violada      (ORA-02290)
+--      -20008  Valor demasiado largo          (ORA-12899)
+--      -20009  Error de conversión de datos   (VALUE_ERROR / INVALID_NUMBER)
+--      -20099  Error inesperado de base de datos (incluye traza interna)
 --------------------------------------------------------------------------------
 CREATE OR REPLACE PROCEDURE sp_insertar_cliente (
     p_nombre      IN  clientes.nombre%TYPE,
@@ -52,12 +65,26 @@ CREATE OR REPLACE PROCEDURE sp_insertar_cliente (
     p_id_cliente  OUT clientes.id_cliente%TYPE
 )
 IS
-    e_correo_duplicado  EXCEPTION;
-    PRAGMA EXCEPTION_INIT(e_correo_duplicado, -1);  -- ORA-00001: unique constraint
+    -- Errores de restricción que el INSERT puede lanzar.
+    -- ORA-00001 no se declara: Oracle ya lo expone como DUP_VAL_ON_INDEX.
+    e_valor_nulo      EXCEPTION;
+    PRAGMA EXCEPTION_INIT(e_valor_nulo,    -1400);   -- NOT NULL violado
+    e_check_violado   EXCEPTION;
+    PRAGMA EXCEPTION_INIT(e_check_violado, -2290);   -- CHECK violado
+    e_valor_largo     EXCEPTION;
+    PRAGMA EXCEPTION_INIT(e_valor_largo,   -12899);  -- value too large for column
+
+    -- Rango reservado por Oracle para errores de aplicación
+    c_err_app_min CONSTANT PLS_INTEGER := -20999;
+    c_err_app_max CONSTANT PLS_INTEGER := -20000;
 
     v_correo   clientes.correo%TYPE;
     v_existe   PLS_INTEGER;
 BEGIN
+    -- Punto de retorno: si algo falla, se deshace solo lo hecho por este
+    -- procedimiento, sin tocar la transacción abierta por el llamante.
+    SAVEPOINT sp_antes_alta;
+
     -- Normalización de entrada
     v_correo := LOWER(TRIM(p_correo));
 
@@ -91,13 +118,67 @@ BEGIN
     RETURNING id_cliente INTO p_id_cliente;
 
 EXCEPTION
-    -- Red de seguridad: si dos sesiones concurrentes pasan la validación previa,
-    -- el índice único sigue protegiendo la integridad.
-    WHEN e_correo_duplicado THEN
-        RAISE_APPLICATION_ERROR(-20004,
-            'Ya existe un cliente registrado con el correo: ' || v_correo);
+    -- Red de seguridad ante concurrencia: si dos sesiones pasan a la vez la
+    -- validación previa, el índice único sigue protegiendo la integridad.
+    WHEN DUP_VAL_ON_INDEX THEN
+        ROLLBACK TO sp_antes_alta;
+        p_id_cliente := NULL;
+        -- ORA-00001 puede venir del correo o de la clave primaria; hay que
+        -- distinguirlos para no dar un mensaje engañoso.
+        IF INSTR(UPPER(SQLERRM), 'UK_CLIENTES_CORREO') > 0 THEN
+            RAISE_APPLICATION_ERROR(-20004,
+                'Ya existe un cliente registrado con el correo: ' || v_correo);
+        ELSE
+            RAISE_APPLICATION_ERROR(-20005,
+                'Violación de unicidad al insertar el cliente: ' || SQLERRM);
+        END IF;
+
+    WHEN e_valor_nulo THEN
+        ROLLBACK TO sp_antes_alta;
+        p_id_cliente := NULL;
+        RAISE_APPLICATION_ERROR(-20006,
+            'Falta un campo obligatorio: ' || SQLERRM);
+
+    WHEN e_check_violado THEN
+        ROLLBACK TO sp_antes_alta;
+        p_id_cliente := NULL;
+        RAISE_APPLICATION_ERROR(-20007,
+            'Los datos no cumplen una restricción de la tabla: ' || SQLERRM);
+
+    WHEN e_valor_largo THEN
+        ROLLBACK TO sp_antes_alta;
+        p_id_cliente := NULL;
+        RAISE_APPLICATION_ERROR(-20008,
+            'Algún valor excede la longitud permitida: ' || SQLERRM);
+
+    WHEN VALUE_ERROR OR INVALID_NUMBER THEN
+        ROLLBACK TO sp_antes_alta;
+        p_id_cliente := NULL;
+        RAISE_APPLICATION_ERROR(-20009,
+            'Error de conversión o tamaño en los datos de entrada: ' || SQLERRM);
+
+    -- Cualquier otro error de base de datos.
+    WHEN OTHERS THEN
+        ROLLBACK TO sp_antes_alta;
+        p_id_cliente := NULL;
+        -- Los errores de negocio (-20000..-20999) ya llevan un mensaje claro:
+        -- se relanzan tal cual en lugar de envolverlos otra vez.
+        IF SQLCODE BETWEEN c_err_app_min AND c_err_app_max THEN
+            RAISE;
+        END IF;
+        -- El mensaje de RAISE_APPLICATION_ERROR admite 2048 bytes como máximo,
+        -- y la traza puede ser larga: se recorta para no perder el error real.
+        RAISE_APPLICATION_ERROR(-20099,
+            SUBSTR('Error inesperado al dar de alta el cliente (ORA'
+                   || SQLCODE || '): ' || SQLERRM || CHR(10)
+                   || DBMS_UTILITY.FORMAT_ERROR_BACKTRACE, 1, 2000),
+            TRUE);
 END sp_insertar_cliente;
 /
+
+-- Comprobación de compilación: muestra los errores si el procedimiento quedó
+-- INVALID en lugar de fallar en silencio.
+SHOW ERRORS PROCEDURE sp_insertar_cliente
 
 --------------------------------------------------------------------------------
 -- 4. Ejemplo de uso
@@ -128,6 +209,42 @@ BEGIN
     sp_insertar_cliente(
         p_nombre     => 'Ana',
         p_correo     => 'ANA.GARCIA@EJEMPLO.COM',
+        p_id_cliente => v_id
+    );
+    COMMIT;
+EXCEPTION
+    WHEN OTHERS THEN
+        ROLLBACK;
+        DBMS_OUTPUT.PUT_LINE('Error esperado: ' || SQLERRM);
+END;
+/
+
+-- Correo con formato inválido -> debe fallar con ORA-20003
+DECLARE
+    v_id clientes.id_cliente%TYPE;
+BEGIN
+    sp_insertar_cliente(
+        p_nombre     => 'Luis',
+        p_correo     => 'luis.sin.arroba',
+        p_id_cliente => v_id
+    );
+    COMMIT;
+EXCEPTION
+    WHEN OTHERS THEN
+        ROLLBACK;
+        DBMS_OUTPUT.PUT_LINE('Error esperado: ' || SQLERRM);
+END;
+/
+
+-- Nombre más largo que la columna -> lo captura el bloque de longitud/conversión
+-- (ORA-20008 si salta en el INSERT, ORA-20009 si salta antes, al convertir).
+DECLARE
+    v_id     clientes.id_cliente%TYPE;
+    v_nombre VARCHAR2(200) := RPAD('X', 150, 'X');
+BEGIN
+    sp_insertar_cliente(
+        p_nombre     => v_nombre,
+        p_correo     => 'nombre.largo@ejemplo.com',
         p_id_cliente => v_id
     );
     COMMIT;
