@@ -1,0 +1,60 @@
+# ---------------------------------------------------------------------------
+# .gitignore - Proyecto SQL / Oracle PL/SQL
+# ---------------------------------------------------------------------------
+
+# Credenciales y configuración local (NUNCA subir a git)
+*.env
+.env
+.env.*
+tnsnames.ora
+sqlnet.ora
+listener.ora
+wallet/
+*.pem
+*.key
+credenciales*
+config.local.*
+
+# Volcados y copias de seguridad de base de datos
+*.dmp
+*.dump
+*.bak
+*.backup
+*.sql.gz
+*.sql.zip
+backups/
+dumps/
+
+# Logs y salidas de ejecución
+*.log
+*.lst
+*.out
+*.trc
+*.err
+logs/
+spool/
+
+# Artefactos de SQL*Plus / SQL Developer / SQLcl
+*.sqlplus_history
+login.sql
+.sqldeveloper/
+sqldeveloper.log
+*.dbf
+*.ctl.log
+
+# Herramientas de migración
+flyway.conf
+liquibase.properties
+
+# Editores e IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.sublime-workspace
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+desktop.ini
