@@ -1,8 +1,78 @@
 --------------------------------------------------------------------------------
--- clientes.sql
--- Tabla CLIENTES + procedimiento PL/SQL de alta con validación de correo único
--- y gestión completa de excepciones (DUP_VAL_ON_INDEX, constraints y OTHERS).
--- Probado sobre Oracle Database 11g o superior.
+-- Archivo      : clientes.sql
+-- Descripción  : Alta de clientes con correo electrónico único. Crea la tabla
+--                CLIENTES, su secuencia de identificadores y el procedimiento
+--                de inserción SP_INSERTAR_CLIENTE, con validaciones de entrada
+--                y gestión completa de excepciones.
+-- Base de datos: Oracle Database 11g o superior
+-- Autor        : madag7
+-- Fecha creación : 22/09/2026
+-- Última modif.  : 22/09/2026
+--------------------------------------------------------------------------------
+-- OBJETOS QUE CREA ESTE SCRIPT
+--------------------------------------------------------------------------------
+--  1) TABLA  clientes
+--     Registro maestro de clientes.
+--       id_cliente  NUMBER(10)    PK, se asigna desde seq_clientes
+--       nombre      VARCHAR2(100) Obligatorio
+--       apellido    VARCHAR2(100) Opcional
+--       correo      VARCHAR2(150) Obligatorio, único sin distinguir mayúsculas
+--       telefono    VARCHAR2(20)  Opcional
+--       fecha_alta  DATE          Obligatorio, por defecto SYSDATE
+--       activo      CHAR(1)       Obligatorio, 'S' o 'N', por defecto 'S'
+--
+--  2) ÍNDICE  uk_clientes_correo  (ÚNICO, basado en función)
+--     Impone la unicidad del correo sobre LOWER(TRIM(correo)), de modo que
+--     'Ana@X.com' y 'ana@x.com' se consideran el mismo correo. Se usa un
+--     índice y no una constraint UNIQUE porque Oracle no admite expresiones
+--     dentro de una constraint.
+--
+--  3) CONSTRAINT  ck_clientes_correo
+--     Valida por expresión regular el formato mínimo texto@texto.dominio.
+--
+--  4) CONSTRAINT  ck_clientes_activo
+--     Restringe la columna activo a los valores 'S' o 'N'.
+--
+--  5) SECUENCIA  seq_clientes
+--     Genera los id_cliente. START WITH 1, INCREMENT BY 1, NOCACHE NOCYCLE.
+--     NOCACHE evita huecos en la numeración a costa de algo de rendimiento.
+--
+--  6) PROCEDIMIENTO  sp_insertar_cliente
+--     Da de alta un cliente validando los datos antes de insertar. No hace
+--     COMMIT: el control de la transacción queda en manos del llamante.
+--
+--     PARÁMETROS DE ENTRADA
+--       p_nombre     IN  clientes.nombre%TYPE
+--                        Nombre del cliente. Obligatorio; se guarda con TRIM.
+--       p_apellido   IN  clientes.apellido%TYPE   DEFAULT NULL
+--                        Apellido. Opcional; se guarda con TRIM.
+--       p_correo     IN  clientes.correo%TYPE
+--                        Correo. Obligatorio; se normaliza a LOWER(TRIM(...))
+--                        antes de validar y de insertar.
+--       p_telefono   IN  clientes.telefono%TYPE   DEFAULT NULL
+--                        Teléfono. Opcional; se guarda con TRIM.
+--
+--     PARÁMETRO DE SALIDA
+--       p_id_cliente OUT clientes.id_cliente%TYPE
+--                        Identificador asignado al nuevo cliente. Se devuelve
+--                        NULL si la operación falla.
+--
+--     ERRORES QUE DEVUELVE  (detalle en la cabecera del apartado 3)
+--       -20001..-20003  Validaciones de entrada (nombre, correo, formato)
+--       -20004..-20005  Violaciones de unicidad
+--       -20006..-20009  Violaciones de restricciones y errores de conversión
+--       -20099          Error inesperado, con SQLCODE, SQLERRM y traza
+--
+--  7) BLOQUES ANÓNIMOS DE PRUEBA (apartado 4)
+--     Cuatro casos de ejemplo: alta correcta, correo duplicado en mayúsculas,
+--     formato de correo inválido y nombre más largo que la columna.
+--
+--------------------------------------------------------------------------------
+-- USO
+--   Ejecutar el script completo sobre un esquema vacío:
+--     SQL> @clientes.sql
+--   Requiere SET SERVEROUTPUT ON para ver la salida de los bloques de prueba
+--   (el script ya lo activa).
 --------------------------------------------------------------------------------
 
 SET SERVEROUTPUT ON
