@@ -32,6 +32,7 @@ El objetivo no es solo insertar filas, sino mostrar cómo se construye un proced
 | `apellido` | `VARCHAR2(100)` | Opcional. |
 | `correo` | `VARCHAR2(150)` | Obligatorio y único sin distinguir mayúsculas. |
 | `telefono` | `VARCHAR2(20)` | Opcional. |
+| `direccion` | `VARCHAR2(100)` | Opcional. |
 | `fecha_alta` | `DATE` | Obligatorio, por defecto `SYSDATE`. |
 | `activo` | `CHAR(1)` | Obligatorio, `'S'` o `'N'`, por defecto `'S'`. |
 
@@ -50,6 +51,7 @@ PROCEDURE sp_insertar_cliente (
     p_apellido    IN  clientes.apellido%TYPE DEFAULT NULL,
     p_correo      IN  clientes.correo%TYPE,
     p_telefono    IN  clientes.telefono%TYPE DEFAULT NULL,
+    p_direccion   IN  clientes.direccion%TYPE DEFAULT NULL,
     p_id_cliente  OUT clientes.id_cliente%TYPE
 );
 ```
@@ -58,7 +60,7 @@ Devuelve en `p_id_cliente` el identificador asignado, o `NULL` si la operación 
 
 **Validaciones previas a la inserción**
 
-1. **Normalización de entrada** — el correo se convierte a `LOWER(TRIM(...))` antes de validarse y de insertarse; nombre, apellido y teléfono se almacenan con `TRIM`.
+1. **Normalización de entrada** — el correo se convierte a `LOWER(TRIM(...))` antes de validarse y de insertarse; nombre, apellido, teléfono y dirección se almacenan con `TRIM`.
 2. **Nombre obligatorio** — se rechaza tanto `NULL` como una cadena compuesta solo de espacios.
 3. **Correo obligatorio** — comprobado tras la normalización.
 4. **Formato de correo** — validado con `REGEXP_LIKE` antes de tocar la tabla.
@@ -140,6 +142,7 @@ BEGIN
         p_apellido   => 'García',
         p_correo     => 'ana.garcia@ejemplo.com',
         p_telefono   => '600123456',
+        p_direccion  => 'Calle Mayor 1, 28013 Madrid',
         p_id_cliente => v_id
     );
     DBMS_OUTPUT.PUT_LINE('Cliente insertado con id = ' || v_id);

@@ -7,7 +7,7 @@
 -- Base de datos: Oracle Database 11g o superior
 -- Autor        : madag7
 -- Fecha creación : 22/09/2026
--- Última modif.  : 22/09/2026
+-- Última modif.  : 23/09/2026
 --------------------------------------------------------------------------------
 -- OBJETOS QUE CREA ESTE SCRIPT
 --------------------------------------------------------------------------------
@@ -18,6 +18,7 @@
 --       apellido    VARCHAR2(100) Opcional
 --       correo      VARCHAR2(150) Obligatorio, único sin distinguir mayúsculas
 --       telefono    VARCHAR2(20)  Opcional
+--       direccion   VARCHAR2(100) Opcional
 --       fecha_alta  DATE          Obligatorio, por defecto SYSDATE
 --       activo      CHAR(1)       Obligatorio, 'S' o 'N', por defecto 'S'
 --
@@ -51,6 +52,8 @@
 --                        antes de validar y de insertar.
 --       p_telefono   IN  clientes.telefono%TYPE   DEFAULT NULL
 --                        Teléfono. Opcional; se guarda con TRIM.
+--       p_direccion  IN  clientes.direccion%TYPE  DEFAULT NULL
+--                        Dirección postal. Opcional; se guarda con TRIM.
 --
 --     PARÁMETRO DE SALIDA
 --       p_id_cliente OUT clientes.id_cliente%TYPE
@@ -86,6 +89,7 @@ CREATE TABLE clientes (
     apellido          VARCHAR2(100),
     correo            VARCHAR2(150)   NOT NULL,
     telefono          VARCHAR2(20),
+    direccion         VARCHAR2(100),
     fecha_alta        DATE            DEFAULT SYSDATE NOT NULL,
     activo            CHAR(1)         DEFAULT 'S'     NOT NULL,
     CONSTRAINT pk_clientes            PRIMARY KEY (id_cliente)
@@ -132,6 +136,7 @@ CREATE OR REPLACE PROCEDURE sp_insertar_cliente (
     p_apellido    IN  clientes.apellido%TYPE DEFAULT NULL,
     p_correo      IN  clientes.correo%TYPE,
     p_telefono    IN  clientes.telefono%TYPE DEFAULT NULL,
+    p_direccion   IN  clientes.direccion%TYPE DEFAULT NULL,
     p_id_cliente  OUT clientes.id_cliente%TYPE
 )
 IS
@@ -182,9 +187,10 @@ BEGIN
             'Ya existe un cliente registrado con el correo: ' || v_correo);
     END IF;
 
-    INSERT INTO clientes (id_cliente, nombre, apellido, correo, telefono)
+    INSERT INTO clientes (id_cliente, nombre, apellido, correo, telefono,
+                          direccion)
     VALUES (seq_clientes.NEXTVAL, TRIM(p_nombre), TRIM(p_apellido),
-            v_correo, TRIM(p_telefono))
+            v_correo, TRIM(p_telefono), TRIM(p_direccion))
     RETURNING id_cliente INTO p_id_cliente;
 
 EXCEPTION
@@ -261,6 +267,7 @@ BEGIN
         p_apellido   => 'García',
         p_correo     => 'ana.garcia@ejemplo.com',
         p_telefono   => '600123456',
+        p_direccion  => 'Calle Mayor 1, 28013 Madrid',
         p_id_cliente => v_id
     );
     DBMS_OUTPUT.PUT_LINE('Cliente insertado con id = ' || v_id);
